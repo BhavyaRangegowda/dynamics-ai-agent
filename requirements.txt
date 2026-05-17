@@ -1,0 +1,5 @@
+jira
+groq
+selenium
+webdriver-manager
+python-dotenv
