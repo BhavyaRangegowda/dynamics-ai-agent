@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 
 from groq import Groq
@@ -49,14 +50,41 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _build_driver():
+    """
+    Builds ChromeDriver for both:
+      - Local execution on Windows/Mac with visible browser
+      - Azure Pipeline execution on Ubuntu with headless browser
+
+    Azure hosted agents do not support normal visible Chrome UI,
+    so we enable headless mode automatically when running in CI.
+    """
     options = webdriver.ChromeOptions()
-    options.add_argument("--start-maximized")
+
+    is_pipeline = os.getenv("TF_BUILD", "False").lower() == "true"
+    force_headless = os.getenv("HEADLESS", "false").lower() == "true"
+
+    if is_pipeline or force_headless:
+        logger.info("Running Chrome in headless mode for CI/Azure Pipeline")
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--remote-debugging-port=9222")
+        options.add_argument("--window-size=1920,1080")
+    else:
+        logger.info("Running Chrome in normal visible mode for local execution")
+        options.add_argument("--start-maximized")
+
     options.add_argument("--disable-notifications")
     options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-infobars")
+
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()),
         options=options,
     )
+
     driver.set_window_size(1920, 1080)
     return driver
 
