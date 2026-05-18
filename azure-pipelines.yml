@@ -1,8 +1,17 @@
 trigger:
 - main
 
+parameters:
+- name: useSelfHosted
+  displayName: 'Use Self Hosted Agent'
+  type: boolean
+  default: false
+
 pool:
-  vmImage: ubuntu-latest
+  ${{ if eq(parameters.useSelfHosted, true) }}:
+    name: BhavyaLaptop
+  ${{ else }}:
+    vmImage: ubuntu-latest
 
 steps:
 - task: UsePythonVersion@0
