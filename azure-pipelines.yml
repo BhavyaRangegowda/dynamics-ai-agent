@@ -34,6 +34,7 @@ jobs:
     displayName: 'Run AI Automation Framework'
     env:
       HEADLESS: ${{ ne(variables['Build.SourceBranchName'], 'self-hosted') }}
+      SLACK_WEBHOOK_URL: $(SLACK_WEBHOOK_URL)
       JIRA_URL: $(JIRA_URL)
       JIRA_EMAIL: $(JIRA_EMAIL)
       JIRA_API_TOKEN: $(JIRA_API_TOKEN)
