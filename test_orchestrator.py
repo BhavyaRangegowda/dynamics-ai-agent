@@ -1,6 +1,6 @@
+import os
 import json
 import logging
-import os
 import time
 
 from groq import Groq
@@ -19,12 +19,14 @@ from config import (
     SCREENSHOT_DIR,
     MFA_WAIT_SECONDS,
 )
+
 from selenium_helpers import (
     wait_for_page_load,
     wait_for_dynamics_ready,
     capture_screenshot,
     click_element,
 )
+
 from ai_agent import ai_generate_test_cases, ai_decide_workflow
 from dynamics_workflows import execute_ai_workflow
 from jira_service import create_jira_client, fetch_user_stories
@@ -34,7 +36,7 @@ from email_service import send_test_report_email
 
 
 # ---------------------------------------------------------------------------
-# Logging setup — configure once here so all modules inherit it
+# Logging setup
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(
@@ -42,6 +44,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,35 +53,29 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _build_driver():
-    """
-    Builds ChromeDriver for both:
-      - Local execution on Windows/Mac with visible browser
-      - Azure Pipeline execution on Ubuntu with headless browser
-
-    Azure hosted agents do not support normal visible Chrome UI,
-    so we enable headless mode automatically when running in CI.
-    """
     options = webdriver.ChromeOptions()
 
-    is_pipeline = os.getenv("TF_BUILD", "False").lower() == "true"
-    force_headless = os.getenv("HEADLESS", "false").lower() == "true"
+    # Default local execution = visible browser
+    # Azure hosted pipeline can override using HEADLESS=true
+    headless = os.getenv("HEADLESS", "false").lower() == "true"
 
-    if is_pipeline or force_headless:
-        logger.info("Running Chrome in headless mode for CI/Azure Pipeline")
+    if headless:
+        logger.info("Running browser in HEADLESS mode")
+
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--remote-debugging-port=9222")
-        options.add_argument("--window-size=1920,1080")
+
     else:
-        logger.info("Running Chrome in normal visible mode for local execution")
+        logger.info("Running browser in VISIBLE mode")
+
         options.add_argument("--start-maximized")
 
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-notifications")
     options.add_argument("--disable-popup-blocking")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-infobars")
 
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()),
@@ -86,6 +83,7 @@ def _build_driver():
     )
 
     driver.set_window_size(1920, 1080)
+
     return driver
 
 
@@ -95,32 +93,55 @@ def _build_driver():
 
 def login_to_dynamics(driver):
     logger.info("Logging into Dynamics 365...")
+
     driver.get(DYNAMICS_URL)
+
     wait_for_page_load(driver)
 
     WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.NAME, "loginfmt"))
     )
-    driver.find_element(By.NAME, "loginfmt").send_keys(DYNAMICS_USERNAME)
+
+    driver.find_element(By.NAME, "loginfmt").send_keys(
+        DYNAMICS_USERNAME
+    )
+
     click_element(driver, "login_next", "Login Next")
+
     time.sleep(2)
 
     WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.NAME, "passwd"))
     )
-    driver.find_element(By.NAME, "passwd").send_keys(DYNAMICS_PASSWORD)
+
+    driver.find_element(By.NAME, "passwd").send_keys(
+        DYNAMICS_PASSWORD
+    )
+
     click_element(driver, "login_next", "Sign In")
 
-    logger.info("Waiting %d seconds for MFA approval — check your phone!", MFA_WAIT_SECONDS)
+    logger.info(
+        "Waiting %d seconds for MFA approval — check your phone!",
+        MFA_WAIT_SECONDS,
+    )
+
     time.sleep(MFA_WAIT_SECONDS)
 
     try:
-        click_element(driver, "login_next", "Stay Signed In", timeout=8)
+        click_element(
+            driver,
+            "login_next",
+            "Stay Signed In",
+            timeout=8,
+        )
+
     except Exception:
         logger.info("No 'Stay signed in' prompt appeared")
 
     wait_for_dynamics_ready(driver)
+
     logger.info("Login successful")
+
     capture_screenshot(driver, "00_login_success.png")
 
 
@@ -129,17 +150,40 @@ def login_to_dynamics(driver):
 # ---------------------------------------------------------------------------
 
 def _print_summary(test_results):
+
     print("\n" + "=" * 70)
+
     print(f"{'ISSUE':<12} {'STATUS':<45} {'SCREENSHOT'}")
+
     print("-" * 70)
+
     for r in test_results:
+
         status = r["status"]
+
         screenshot = r.get("screenshot", "—")
-        print(f"{r['issue_key']:<12} {status:<45} {screenshot}")
+
+        print(
+            f"{r['issue_key']:<12} "
+            f"{status:<45} "
+            f"{screenshot}"
+        )
+
     print("=" * 70)
-    passed = sum(1 for r in test_results if str(r["status"]).startswith("PASS"))
+
+    passed = sum(
+        1 for r in test_results
+        if str(r["status"]).startswith("PASS")
+    )
+
     failed = len(test_results) - passed
-    print(f"Total: {len(test_results)}  |  Passed: {passed}  |  Failed: {failed}")
+
+    print(
+        f"Total: {len(test_results)}  |  "
+        f"Passed: {passed}  |  "
+        f"Failed: {failed}"
+    )
+
     print("=" * 70 + "\n")
 
 
@@ -148,42 +192,79 @@ def _print_summary(test_results):
 # ---------------------------------------------------------------------------
 
 def main():
+
     print("=" * 60)
     print("AI-POWERED DYNAMICS 365 TEST AUTOMATION AGENT")
     print("=" * 60)
 
     jira_client = create_jira_client()
+
     groq_client = Groq(api_key=GROQ_API_KEY)
 
-    # Fresh Zephyr test cycle for this run
+    # Fresh Zephyr cycle
     reset_cycle_cache()
 
     driver = _build_driver()
+
     test_results = []
 
     try:
+
+        # -------------------------------------------------------------------
+        # Step 1 - Login
+        # -------------------------------------------------------------------
+
         login_to_dynamics(driver)
 
-        # ── Step 1: Pull user stories ────────────────────────────────────────
+        # -------------------------------------------------------------------
+        # Step 2 - Pull Jira stories
+        # -------------------------------------------------------------------
+
         logger.info("[STEP 1] Pulling user stories from Jira...")
+
         issues = fetch_user_stories(jira_client)
+
         logger.info("Found %d user stories", len(issues))
 
-        # ── Step 2: Process each story ───────────────────────────────────────
+        # -------------------------------------------------------------------
+        # Step 3 - Process each story
+        # -------------------------------------------------------------------
+
         for issue in issues:
-            logger.info("[PROCESSING] %s: %s", issue.key, issue.fields.summary)
 
-            logger.info("  Generating test cases with AI...")
-            test_cases = ai_generate_test_cases(groq_client, issue.fields.summary)
+            logger.info(
+                "[PROCESSING] %s: %s",
+                issue.key,
+                issue.fields.summary,
+            )
 
-            logger.info("  Deciding automation workflow with AI...")
-            ai_plan = ai_decide_workflow(groq_client, issue.fields.summary)
-            logger.info("  AI plan: %s", json.dumps(ai_plan))
+            logger.info("Generating AI test cases...")
 
-            test_status, screenshot_path = execute_ai_workflow(driver, issue.key, ai_plan)
+            test_cases = ai_generate_test_cases(
+                groq_client,
+                issue.fields.summary,
+            )
 
-            # Post to Zephyr Scale (or fall back to Jira comment)
-            logger.info("  Posting result to Zephyr / Jira...")
+            logger.info("Generating AI workflow plan...")
+
+            ai_plan = ai_decide_workflow(
+                groq_client,
+                issue.fields.summary,
+            )
+
+            logger.info(
+                "AI plan: %s",
+                json.dumps(ai_plan, indent=2),
+            )
+
+            test_status, screenshot_path = execute_ai_workflow(
+                driver,
+                issue.key,
+                ai_plan,
+            )
+
+            logger.info("Posting result to Zephyr/Jira...")
+
             post_test_result(
                 issue_key=issue.key,
                 summary=issue.fields.summary,
@@ -202,44 +283,93 @@ def main():
                 "screenshot": screenshot_path,
             })
 
-            logger.info("  Completed: %s → %s", issue.key, test_status)
+            logger.info(
+                "Completed: %s → %s",
+                issue.key,
+                test_status,
+            )
 
-        # ── Step 3: Save raw JSON results ────────────────────────────────────
-        logger.info("[STEP 3] Saving test results to test_results.json...")
+        # -------------------------------------------------------------------
+        # Step 4 - Save JSON
+        # -------------------------------------------------------------------
+
+        logger.info(
+            "[STEP 3] Saving test results to test_results.json..."
+        )
+
         with open("test_results.json", "w") as f:
             json.dump(test_results, f, indent=2)
 
-        # ── Step 4: Generate HTML report ─────────────────────────────────────
+        # -------------------------------------------------------------------
+        # Step 5 - Generate HTML report
+        # -------------------------------------------------------------------
+
         logger.info("[STEP 4] Generating HTML report...")
-        report_path = generate_html_report(test_results, output_path="test_report.html")
+
+        report_path = generate_html_report(
+            test_results,
+            output_path="test_report.html",
+        )
+
         if report_path:
             logger.info("HTML report saved: %s", report_path)
         else:
             logger.warning("HTML report generation failed")
 
-        # ── Step 5: Print console summary ────────────────────────────────────
-        _print_summary(test_results)
-        logger.info("Screenshots saved in: %s", SCREENSHOT_DIR)
+        # -------------------------------------------------------------------
+        # Step 6 - Console summary
+        # -------------------------------------------------------------------
 
-        # ── Step 6: Send email notification ──────────────────────────────────
+        _print_summary(test_results)
+
+        logger.info(
+            "Screenshots saved in: %s",
+            SCREENSHOT_DIR,
+        )
+
+        # -------------------------------------------------------------------
+        # Step 7 - Email notification
+        # -------------------------------------------------------------------
+
         logger.info("[STEP 6] Sending email notification...")
-        send_test_report_email(test_results, report_path=report_path)
+
+        send_test_report_email(
+            test_results,
+            report_path=report_path,
+        )
 
     except Exception as e:
-        logger.error("Fatal error: %s: %s", type(e).__name__, e)
+
+        logger.error(
+            "Fatal error: %s: %s",
+            type(e).__name__,
+            e,
+        )
+
         try:
             capture_screenshot(driver, "fatal_error.png")
         except Exception:
             pass
 
-        # Still try to send a failure email if results were partially collected
+        # Send partial results if available
         if test_results:
+
             logger.info("Sending partial results email...")
-            report_path = generate_html_report(test_results, output_path="test_report.html")
-            send_test_report_email(test_results, report_path=report_path)
+
+            report_path = generate_html_report(
+                test_results,
+                output_path="test_report.html",
+            )
+
+            send_test_report_email(
+                test_results,
+                report_path=report_path,
+            )
 
     finally:
+
         time.sleep(3)
+
         driver.quit()
 
 
