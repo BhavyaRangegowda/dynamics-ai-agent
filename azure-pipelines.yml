@@ -2,27 +2,28 @@
 
 trigger:
 - main
-
-parameters:
-- name: useSelfHosted
-  displayName: 'Use Self Hosted Agent'
-  type: boolean
-  default: false
+- self-hosted
 
 jobs:
 - job: RunAutomation
 
   pool:
-    ${{ if eq(parameters.useSelfHosted, true) }}:
+    ${{ if eq(variables['Build.SourceBranchName'], 'self-hosted') }}:
       name: BhavyaLaptop
     ${{ else }}:
       vmImage: ubuntu-latest
 
   steps:
-  - task: UsePythonVersion@0
-    inputs:
-      versionSpec: '3.12'
-    displayName: 'Use Python 3.12'
+  - ${{ if ne(variables['Build.SourceBranchName'], 'self-hosted') }}:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.12'
+      displayName: 'Use Python 3.12 on Hosted Agent'
+
+  - ${{ if eq(variables['Build.SourceBranchName'], 'self-hosted') }}:
+    - script: |
+        python --version
+      displayName: 'Use Installed Python on Self Hosted Agent'
 
   - script: |
       python -m pip install --upgrade pip
