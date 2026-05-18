@@ -9,45 +9,48 @@ parameters:
   type: boolean
   default: false
 
-pool:
-  ${{ if eq(parameters.useSelfHosted, true) }}:
-    name: BhavyaLaptop
-  ${{ else }}:
-    vmImage: ubuntu-latest
+jobs:
+- job: RunAutomation
 
-steps:
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: '3.12'
-  displayName: 'Use Python 3.12'
+  pool:
+    ${{ if eq(parameters.useSelfHosted, true) }}:
+      name: BhavyaLaptop
+    ${{ else }}:
+      vmImage: ubuntu-latest
 
-- script: |
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
-  displayName: 'Install dependencies'
+  steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.12'
+    displayName: 'Use Python 3.12'
 
-- script: |
-    python test_orchestrator.py
-  displayName: 'Run AI Automation Framework'
-  env:
-    JIRA_URL: $(JIRA_URL)
-    JIRA_EMAIL: $(JIRA_EMAIL)
-    JIRA_API_TOKEN: $(JIRA_API_TOKEN)
-    PROJECT_KEY: $(PROJECT_KEY)
-    GROQ_API_KEY: $(GROQ_API_KEY)
-    DYNAMICS_URL: $(DYNAMICS_URL)
-    DYNAMICS_USERNAME: $(DYNAMICS_USERNAME)
-    DYNAMICS_PASSWORD: $(DYNAMICS_PASSWORD)
-    EMAIL_SENDER: $(EMAIL_SENDER)
-    EMAIL_PASSWORD: $(EMAIL_PASSWORD)
-    EMAIL_RECIPIENTS: $(EMAIL_RECIPIENTS)
-    EMAIL_SMTP_HOST: $(EMAIL_SMTP_HOST)
-    EMAIL_SMTP_PORT: $(EMAIL_SMTP_PORT)
-    GROQ_MODEL: $(GROQ_MODEL)
+  - script: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+    displayName: 'Install dependencies'
 
-- task: PublishBuildArtifacts@1
-  inputs:
-    PathtoPublish: '.'
-    ArtifactName: 'automation-artifacts'
-    publishLocation: 'Container'
-  displayName: 'Publish Reports and Screenshots'
+  - script: |
+      python test_orchestrator.py
+    displayName: 'Run AI Automation Framework'
+    env:
+      JIRA_URL: $(JIRA_URL)
+      JIRA_EMAIL: $(JIRA_EMAIL)
+      JIRA_API_TOKEN: $(JIRA_API_TOKEN)
+      PROJECT_KEY: $(PROJECT_KEY)
+      GROQ_API_KEY: $(GROQ_API_KEY)
+      DYNAMICS_URL: $(DYNAMICS_URL)
+      DYNAMICS_USERNAME: $(DYNAMICS_USERNAME)
+      DYNAMICS_PASSWORD: $(DYNAMICS_PASSWORD)
+      EMAIL_SENDER: $(EMAIL_SENDER)
+      EMAIL_PASSWORD: $(EMAIL_PASSWORD)
+      EMAIL_RECIPIENTS: $(EMAIL_RECIPIENTS)
+      EMAIL_SMTP_HOST: $(EMAIL_SMTP_HOST)
+      EMAIL_SMTP_PORT: $(EMAIL_SMTP_PORT)
+      GROQ_MODEL: $(GROQ_MODEL)
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '.'
+      ArtifactName: 'automation-artifacts'
+      publishLocation: 'Container'
+    displayName: 'Publish Reports and Screenshots'
