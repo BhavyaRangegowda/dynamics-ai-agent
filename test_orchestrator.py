@@ -80,6 +80,22 @@ def _build_driver():
         logger.info("Running browser in VISIBLE mode")
         options.add_argument("--start-maximized")
 
+        # Reuse a dedicated Chrome profile on the self-hosted agent.
+        # This allows Microsoft authentication cookies/session state to persist
+        # between automation runs.
+        chrome_profile = os.getenv(
+            "D365_CHROME_PROFILE",
+            r"C:\Users\bhavy\d365-automation-chrome"
+        )
+
+        options.add_argument(f"--user-data-dir={chrome_profile}")
+        options.add_argument("--profile-directory=Default")
+
+        logger.info(
+            "Using persistent D365 Chrome profile: %s",
+            chrome_profile
+        )
+
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-notifications")
     options.add_argument("--disable-popup-blocking")
@@ -88,6 +104,7 @@ def _build_driver():
         service=Service(ChromeDriverManager().install()),
         options=options,
     )
+
     driver.set_window_size(1920, 1080)
     return driver
 
@@ -97,13 +114,44 @@ def _build_driver():
 # ---------------------------------------------------------------------------
 
 def login_to_dynamics(driver):
-    logger.info("Logging into Dynamics 365...")
+    logger.info("Opening Dynamics 365...")
     driver.get(DYNAMICS_URL)
     wait_for_page_load(driver)
+
+    # ---------------------------------------------------------------
+    # Reuse existing authenticated Microsoft session when available.
+    # ---------------------------------------------------------------
+    try:
+        WebDriverWait(driver, 8).until(
+            lambda d:
+                "login.microsoftonline.com" not in d.current_url.lower()
+                and "login.live.com" not in d.current_url.lower()
+        )
+
+        if "login.microsoftonline.com" not in driver.current_url.lower():
+            logger.info(
+                "Existing Microsoft authentication session detected — "
+                "skipping username/password/MFA login"
+            )
+
+            smart_wait(driver)
+            capture_screenshot(driver, "00_login_success.png")
+            return
+
+    except Exception:
+        logger.info(
+            "No reusable Microsoft session detected — performing normal login"
+        )
+
+    # ---------------------------------------------------------------
+    # Normal Microsoft login
+    # ---------------------------------------------------------------
+    logger.info("Logging into Dynamics 365...")
 
     WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.NAME, "loginfmt"))
     )
+
     driver.find_element(By.NAME, "loginfmt").send_keys(DYNAMICS_USERNAME)
     click_element(driver, "login_next", "Login Next")
     time.sleep(2)
@@ -111,6 +159,7 @@ def login_to_dynamics(driver):
     WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.NAME, "passwd"))
     )
+
     driver.find_element(By.NAME, "passwd").send_keys(DYNAMICS_PASSWORD)
     click_element(driver, "login_next", "Sign In")
 
@@ -118,15 +167,24 @@ def login_to_dynamics(driver):
         "Waiting %d seconds for MFA approval — check your phone!",
         MFA_WAIT_SECONDS
     )
+
     time.sleep(MFA_WAIT_SECONDS)
 
+    # Microsoft may display the Stay signed in prompt on the first
+    # authentication for this persistent Chrome profile.
     try:
-        click_element(driver, "login_next", "Stay Signed In", timeout=8)
+        click_element(
+            driver,
+            "login_next",
+            "Stay Signed In",
+            timeout=8
+        )
+        logger.info("Accepted Microsoft Stay Signed In prompt")
     except Exception:
         logger.info("No 'Stay signed in' prompt appeared")
 
-    # Use smart_wait after login — polls until D365 is truly ready
     smart_wait(driver)
+
     logger.info("Login successful")
     capture_screenshot(driver, "00_login_success.png")
 
