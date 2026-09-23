@@ -3,3 +3,4 @@ groq
 selenium
 webdriver-manager
 python-dotenv
+requests

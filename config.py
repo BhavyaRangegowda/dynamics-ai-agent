@@ -50,6 +50,9 @@ ZEPHYR_ENABLED = os.getenv("ZEPHYR_ENABLED", "false").lower() == "true"
 ZEPHYR_API_TOKEN = os.getenv("ZEPHYR_API_TOKEN", "")
 
 # =====================================================================
+# Story Change Detection
+# =====================================================================
+STORY_HASH_FILE = os.getenv("STORY_HASH_FILE", "story_hashes.json")
 
 # =====================================================================
 # Test Data Defaults
@@ -59,7 +62,8 @@ TEST_LEAD_PREFIX = os.getenv("TEST_LEAD_PREFIX", "AI_Lead")
 TEST_CONTACT_PREFIX = os.getenv("TEST_CONTACT_PREFIX", "AI_Contact")
 TEST_COMPANY_PREFIX = os.getenv("TEST_COMPANY_PREFIX", "AI_Testing_Corp")
 
-# Startup Validation
+# =====================================================================
+# Configuration validation helpers
 # =====================================================================
 _required_keys = [
     "JIRA_URL",
@@ -75,9 +79,53 @@ _required_keys = [
     "EMAIL_RECIPIENTS",
 ]
 
-_missing = [key for key in _required_keys if not os.getenv(key)]
-if _missing:
-    raise EnvironmentError(
-        f"Missing required environment variables: {', '.join(_missing)}\n"
-        f"Please check your .env file."
-    )
+class ConfigError(EnvironmentError):
+    """Raised when required configuration is missing."""
+    pass
+
+
+def load_config():
+    """Return the current configuration values as a dict."""
+    return {
+        "SLACK_WEBHOOK_URL": SLACK_WEBHOOK_URL,
+        "JIRA_URL": JIRA_URL,
+        "JIRA_EMAIL": JIRA_EMAIL,
+        "JIRA_API_TOKEN": JIRA_API_TOKEN,
+        "PROJECT_KEY": PROJECT_KEY,
+        "JIRA_MAX_RESULTS": JIRA_MAX_RESULTS,
+        "GROQ_API_KEY": GROQ_API_KEY,
+        "GROQ_MODEL": GROQ_MODEL,
+        "DYNAMICS_URL": DYNAMICS_URL,
+        "DYNAMICS_USERNAME": DYNAMICS_USERNAME,
+        "DYNAMICS_PASSWORD": DYNAMICS_PASSWORD,
+        "SCREENSHOT_DIR": SCREENSHOT_DIR,
+        "MFA_WAIT_SECONDS": MFA_WAIT_SECONDS,
+        "TEST_DATA_PREFIX": TEST_DATA_PREFIX,
+        "EMAIL_SENDER": EMAIL_SENDER,
+        "EMAIL_PASSWORD": EMAIL_PASSWORD,
+        "EMAIL_RECIPIENTS": EMAIL_RECIPIENTS,
+        "EMAIL_SMTP_HOST": EMAIL_SMTP_HOST,
+        "EMAIL_SMTP_PORT": EMAIL_SMTP_PORT,
+        "ZEPHYR_ENABLED": ZEPHYR_ENABLED,
+        "ZEPHYR_API_TOKEN": ZEPHYR_API_TOKEN,
+        "STORY_HASH_FILE": STORY_HASH_FILE,
+        "TEST_EMAIL_DOMAIN": TEST_EMAIL_DOMAIN,
+        "TEST_LEAD_PREFIX": TEST_LEAD_PREFIX,
+        "TEST_CONTACT_PREFIX": TEST_CONTACT_PREFIX,
+        "TEST_COMPANY_PREFIX": TEST_COMPANY_PREFIX,
+    }
+
+
+def validate_environment(required_keys=None):
+    """Raise ConfigError if any required environment variables are missing."""
+    if required_keys is None:
+        required_keys = _required_keys
+
+    missing = [key for key in required_keys if not os.getenv(key)]
+    if missing:
+        raise ConfigError(
+            f"Missing required environment variables: {', '.join(missing)}\n"
+            f"Please check your .env file."
+        )
+
+    return True

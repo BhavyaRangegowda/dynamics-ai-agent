@@ -1,11 +1,41 @@
-# self hosted parameter enabled
+# =============================================================================
+# AI-Powered Dynamics 365 Test Automation Agent
+# Single pipeline file — works for all 3 environments:
+#
+#   Environment 1 — Local:
+#     Run: python test_orchestrator.py
+#     Uses your .env file directly
+#
+#   Environment 2 — Self-hosted (your laptop as Azure agent):
+#     Branch: self-hosted
+#     Pool: BhavyaLaptop
+#     Browser: visible (HEADLESS=false)
+#     MFA: you approve on your phone (MFA_WAIT_SECONDS=30)
+#
+#   Environment 3 — Cloud (Microsoft hosted agent):
+#     Branch: main
+#     Pool: ubuntu-latest
+#     Browser: headless (HEADLESS=true)
+#     MFA: 0 seconds (requires service account with no MFA)
+# =============================================================================
 
-trigger: none
+trigger:
+  branches:
+    include:
+      - main
+      - self-hosted
+
 pr: none
 
 jobs:
 - job: RunAutomation
+  displayName: 'AI D365 Test Automation'
+  timeoutInMinutes: 120
 
+  # ---------------------------------------------------------------------------
+  # Dynamic pool selection
+  # self-hosted branch = your laptop | main branch = Microsoft cloud
+  # ---------------------------------------------------------------------------
   pool:
     ${{ if eq(variables['Build.SourceBranchName'], 'self-hosted') }}:
       name: BhavyaLaptop
@@ -13,46 +43,179 @@ jobs:
       vmImage: ubuntu-latest
 
   steps:
+
+  # ---------------------------------------------------------------------------
+  # CLOUD ONLY — Install Python 3.12
+  # Self-hosted already has Python installed on your laptop
+  # ---------------------------------------------------------------------------
   - ${{ if ne(variables['Build.SourceBranchName'], 'self-hosted') }}:
     - task: UsePythonVersion@0
       inputs:
         versionSpec: '3.12'
-      displayName: 'Use Python 3.12 on Hosted Agent'
+      displayName: '[Cloud] Install Python 3.12'
 
+  # ---------------------------------------------------------------------------
+  # CLOUD ONLY — Install Google Chrome
+  # Ubuntu cloud agents do not have Chrome pre-installed
+  # ---------------------------------------------------------------------------
+  - ${{ if ne(variables['Build.SourceBranchName'], 'self-hosted') }}:
+    - script: |
+        echo "Installing Google Chrome on cloud agent..."
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
+          | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update -q
+        sudo apt-get install -y google-chrome-stable
+        google-chrome --version
+      displayName: '[Cloud] Install Google Chrome'
+
+  # ---------------------------------------------------------------------------
+  # SELF-HOSTED ONLY — Verify laptop environment
+  # ---------------------------------------------------------------------------
   - ${{ if eq(variables['Build.SourceBranchName'], 'self-hosted') }}:
     - script: |
+        echo "=== Self-hosted agent environment ==="
         python --version
-      displayName: 'Use Installed Python on Self Hosted Agent'
+        pip --version
+        echo "====================================="
+      displayName: '[Self-Hosted] Verify environment'
 
+  # ---------------------------------------------------------------------------
+  # ALL ENVIRONMENTS — Install Python dependencies
+  # ---------------------------------------------------------------------------
   - script: |
       python -m pip install --upgrade pip
       pip install -r requirements.txt
-    displayName: 'Install dependencies'
+    displayName: 'Install Python dependencies'
 
+  # ---------------------------------------------------------------------------
+  # CLOUD ONLY — Restore story_hashes.json from previous pipeline run
+  # Enables story change detection to work across runs on cloud
+  # Safe to fail on the very first run (no previous artifact exists yet)
+  # ---------------------------------------------------------------------------
+  - ${{ if ne(variables['Build.SourceBranchName'], 'self-hosted') }}:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: 'specific'
+        project: '$(System.TeamProjectId)'
+        definition: '$(System.DefinitionId)'
+        buildVersionToDownload: 'latest'
+        artifactName: 'story-hashes'
+        targetPath: '$(System.DefaultWorkingDirectory)'
+      displayName: '[Cloud] Restore story hashes from last run'
+      continueOnError: true
+
+  # ---------------------------------------------------------------------------
+  # ALL ENVIRONMENTS — Run the AI test automation agent
+  #
+  # HEADLESS:
+  #   self-hosted = false (browser visible on your laptop screen)
+  #   cloud       = true  (no screen on cloud agent)
+  #
+  # MFA_WAIT_SECONDS:
+  #   self-hosted = 30 (you approve MFA on your phone)
+  #   cloud       = 0  (service account has no MFA)
+  # ---------------------------------------------------------------------------
   - script: |
       python test_orchestrator.py
-    displayName: 'Run AI Automation Framework'
+    displayName: 'Run AI Automation Agent'
     env:
-      HEADLESS: ${{ ne(variables['Build.SourceBranchName'], 'self-hosted') }}
-      SLACK_WEBHOOK_URL: $(SLACK_WEBHOOK_URL)
+      # HEADLESS:
+      #   main branch (cloud)         = true  (no screen on Microsoft hosted agent)
+      #   self-hosted branch (laptop) = false (browser visible on your screen)
+      #   local run                   = false (controlled by your .env file)
+      HEADLESS: ${{ if eq(variables['Build.SourceBranchName'], 'main') }}true${{ else }}false${{ end }}
+
+      # MFA_WAIT_SECONDS:
+      #   main branch (cloud)         = 0  (service account, no MFA)
+      #   self-hosted branch (laptop) = 30 (you approve on your phone)
+      #   local run                   = 30 (controlled by your .env file)
+      MFA_WAIT_SECONDS: ${{ if eq(variables['Build.SourceBranchName'], 'main') }}0${{ else }}30${{ end }}
+
+      # Jira
       JIRA_URL: $(JIRA_URL)
       JIRA_EMAIL: $(JIRA_EMAIL)
       JIRA_API_TOKEN: $(JIRA_API_TOKEN)
       PROJECT_KEY: $(PROJECT_KEY)
+      JIRA_MAX_RESULTS: $(JIRA_MAX_RESULTS)
+
+      # Groq AI
       GROQ_API_KEY: $(GROQ_API_KEY)
+      GROQ_MODEL: $(GROQ_MODEL)
+
+      # Dynamics 365
       DYNAMICS_URL: $(DYNAMICS_URL)
       DYNAMICS_USERNAME: $(DYNAMICS_USERNAME)
       DYNAMICS_PASSWORD: $(DYNAMICS_PASSWORD)
+
+      # Email
       EMAIL_SENDER: $(EMAIL_SENDER)
       EMAIL_PASSWORD: $(EMAIL_PASSWORD)
       EMAIL_RECIPIENTS: $(EMAIL_RECIPIENTS)
       EMAIL_SMTP_HOST: $(EMAIL_SMTP_HOST)
       EMAIL_SMTP_PORT: $(EMAIL_SMTP_PORT)
-      GROQ_MODEL: $(GROQ_MODEL)
 
-  - task: PublishBuildArtifacts@1
+      # Slack
+      SLACK_WEBHOOK_URL: $(SLACK_WEBHOOK_URL)
+
+      # Zephyr Scale (disabled by default)
+      ZEPHYR_ENABLED: $(ZEPHYR_ENABLED)
+      ZEPHYR_API_TOKEN: $(ZEPHYR_API_TOKEN)
+
+      # Story change detection
+      STORY_HASH_FILE: story_hashes.json
+
+      # Paths
+      SCREENSHOT_DIR: screenshots
+
+      # Test data
+      TEST_EMAIL_DOMAIN: $(TEST_EMAIL_DOMAIN)
+      TEST_LEAD_PREFIX: $(TEST_LEAD_PREFIX)
+      TEST_CONTACT_PREFIX: $(TEST_CONTACT_PREFIX)
+      TEST_COMPANY_PREFIX: $(TEST_COMPANY_PREFIX)
+
+  # ---------------------------------------------------------------------------
+  # CLOUD ONLY — Save story_hashes.json so next run detects story changes
+  # continueOnError=true in case file was not created (e.g. agent crashed)
+  # ---------------------------------------------------------------------------
+  - ${{ if ne(variables['Build.SourceBranchName'], 'self-hosted') }}:
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: 'story_hashes.json'
+        artifactName: 'story-hashes'
+      displayName: '[Cloud] Save story hashes for next run'
+      continueOnError: true
+
+  # ---------------------------------------------------------------------------
+  # ALL ENVIRONMENTS — Publish HTML test report
+  # Download from Azure DevOps > Pipelines > Run > Artifacts
+  # ---------------------------------------------------------------------------
+  - task: PublishPipelineArtifact@1
     inputs:
-      PathtoPublish: '.'
-      ArtifactName: 'automation-artifacts'
-      publishLocation: 'Container'
-    displayName: 'Publish Reports and Screenshots'
+      targetPath: 'test_report.html'
+      artifactName: 'html-test-report'
+    displayName: 'Publish HTML test report'
+    condition: always()
+    continueOnError: true
+
+  # ---------------------------------------------------------------------------
+  # ALL ENVIRONMENTS — Publish screenshots as test evidence
+  # ---------------------------------------------------------------------------
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: 'screenshots'
+      artifactName: 'test-screenshots'
+    displayName: 'Publish screenshots'
+    condition: always()
+    continueOnError: true
+
+  # ---------------------------------------------------------------------------
+  # ALL ENVIRONMENTS — Publish test_results.json
+  # ---------------------------------------------------------------------------
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: 'test_results.json'
+      artifactName: 'test-results-json'
+    displayName: 'Publish test results JSON'
+    condition: always()
+    continueOnError: true

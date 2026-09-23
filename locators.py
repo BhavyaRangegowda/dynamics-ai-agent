@@ -84,4 +84,37 @@ LOCATOR_LIBRARY = {
         (By.XPATH, "(//a[contains(@href,'lead')])[1]"),
         (By.XPATH, "(//a)[1]"),
     ],
+
+    # Duplicate records found popup — click Ignore and save to proceed
+    "ignore_and_save": [
+        (By.XPATH, "//button[contains(text(),'Ignore and save')]"),
+        (By.XPATH, "//button[contains(@data-id,'ignore_save')]"),
+        (By.XPATH, "//button[contains(@aria-label,'Ignore and save')]"),
+        (By.XPATH, "//*[contains(text(),'Ignore and save')]"),
+    ],
+
+    # Timeline and notes for lead/contact records
+    "timeline_button": [
+        (By.XPATH, "//button[contains(normalize-space(),'Timeline') or contains(@aria-label,'Timeline') or contains(@title,'Timeline')]"),
+        (By.XPATH, "//span[normalize-space()='Timeline']"),
+        (By.XPATH, "//button[contains(normalize-space(),'Activity Feed') or contains(@aria-label,'Activity Feed')]"),
+        (By.XPATH, "//li//span[contains(normalize-space(),'Timeline')]"),
+    ],
+
+    "note_input": [
+        (By.XPATH, "//*[contains(@placeholder,'Enter a note')] | //*[contains(@placeholder,'enter a note')]"),
+        (By.XPATH, "//div[@data-id='timeline-add-post-text']"),
+        (By.XPATH, "//div[contains(@data-id,'timeline')]//div[@contenteditable='true']"),
+        (By.XPATH, "//div[contains(@class,'notesControl')]//div[@contenteditable='true']"),
+        (By.XPATH, "//div[contains(@data-id,'notescontrol')]//div[@contenteditable='true']"),
+        (By.XPATH, "//div[@aria-label='Note Text']"),
+        (By.XPATH, "//textarea[contains(@placeholder,'note') or contains(@aria-label,'note')]"),
+    ],
+
+    "add_note_button": [
+        (By.XPATH, "//button[contains(@aria-label,'Add note')] | //button[contains(text(),'Add note')]"),
+        (By.XPATH, "//button[contains(@aria-label,'Add a note')] | //button[contains(text(),'Add a note')]"),
+        (By.XPATH, "//button[contains(@data-id,'add-note')]"),
+        (By.XPATH, "//button[contains(@data-id,'timeline-add-post')]"),
+    ],
 }

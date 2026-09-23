@@ -1,0 +1,25 @@
+[project]
+name = "dynamics-ai-agent"
+version = "0.1.0"
+description = "AI-driven Dynamics 365 test automation for Jira user stories."
+authors = [
+  {name = "Dynamics AI Agent"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+  "jira",
+  "groq",
+  "selenium",
+  "webdriver-manager",
+  "python-dotenv",
+  "requests"
+]
+
+[project.urls]
+homepage = "https://example.com"
+repository = "https://example.com/repo"
+
+[tool.unittest]
+"""No-op placeholder for built-in test discovery."""

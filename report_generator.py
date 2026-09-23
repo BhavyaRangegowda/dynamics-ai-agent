@@ -41,15 +41,31 @@ def generate_html_report(test_results, output_path="test_report.html"):
         logger.warning("No test results to generate report from")
         return None
 
-    total = len(test_results)
-    passed = sum(1 for r in test_results if str(r.get("status", "")).startswith("PASS"))
-    failed = total - passed
-    pass_pct = round((passed / total) * 100) if total else 0
+
     run_time = datetime.now().strftime("%d %B %Y at %H:%M")
 
     # Build result rows
     rows_html = ""
     cards_html = ""
+    total = len(test_results)
+
+    passed = sum(
+        1 for r in test_results
+        if str(r.get("status", "")).startswith("PASS")
+    )
+
+    failed = sum(
+        1 for r in test_results
+        if str(r.get("status", "")).startswith("FAIL")
+    )
+
+    skipped = sum(
+        1 for r in test_results
+        if str(r.get("status", "")).startswith("SKIP")
+    )
+
+    executed = passed + failed
+    pass_pct = round((passed / executed) * 100) if executed else 0
 
     for r in test_results:
         key = r.get("issue_key", "—")
@@ -76,6 +92,83 @@ def generate_html_report(test_results, output_path="test_report.html"):
             <td><span class="status-badge {sc}">{status}</span></td>
         </tr>"""
 
+        # Failure analysis section
+        failure_analysis = r.get("failure_analysis") or {}
+        bug_key = r.get("bug_key", "")
+        story_changed = r.get("story_changed", False)
+
+        failure_html = ""
+        if failure_analysis:
+            category = failure_analysis.get("category", "UNKNOWN")
+            root_cause = failure_analysis.get("root_cause", "—")
+            likely_reason = failure_analysis.get("likely_reason", "—")
+            recommended_fix = failure_analysis.get("recommended_fix", "—")
+            business_impact = failure_analysis.get("business_impact", "—")
+            create_bug = failure_analysis.get("create_bug", False)
+            raw_text = failure_analysis.get("raw_text", "")
+
+            bug_badge = (
+                f'<span style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44;'
+                f'border-radius:6px;padding:2px 8px;font-size:11px;margin-left:8px">'
+                f'🐛 Bug: {bug_key}</span>'
+            ) if bug_key else ""
+
+            # Category colour
+            cat_colour = {
+                "LOCATOR_CHANGED": "#f59e0b",
+                "TIMING_ISSUE": "#3b82f6",
+                "ENVIRONMENT_ISSUE": "#8b5cf6",
+                "PRODUCT_BUG": "#ef4444",
+                "TEST_DATA_ISSUE": "#f97316",
+                "AUTH_ISSUE": "#ec4899",
+                "UNKNOWN": "#6b7280",
+            }.get(category, "#6b7280")
+
+            failure_html = f"""
+                <div style="margin-top:16px;padding:16px;background:#0d0a0a;border:1px solid #ef444440;
+                            border-radius:8px;border-left:4px solid {cat_colour}">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                        <span style="font-size:11px;font-weight:600;letter-spacing:1px;
+                                     text-transform:uppercase;color:{cat_colour}">
+                            🤖 AI Failure Analysis
+                        </span>
+                        <span style="background:{cat_colour}22;color:{cat_colour};border:1px solid {cat_colour}44;
+                                     border-radius:20px;padding:2px 10px;font-size:10px;font-weight:600">
+                            {category}
+                        </span>
+                        {bug_badge}
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;font-size:12px">
+                        <tr style="border-bottom:1px solid #ffffff10">
+                            <td style="padding:6px 8px;color:#6b7280;width:140px;vertical-align:top">Root Cause</td>
+                            <td style="padding:6px 8px;color:#e2e8f0">{root_cause}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #ffffff10">
+                            <td style="padding:6px 8px;color:#6b7280;vertical-align:top">Likely Reason</td>
+                            <td style="padding:6px 8px;color:#a0aec0">{likely_reason}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #ffffff10;background:#ffffff05">
+                            <td style="padding:6px 8px;color:#6b7280;vertical-align:top">Recommended Fix</td>
+                            <td style="padding:6px 8px;color:#22c55e">{recommended_fix}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #ffffff10">
+                            <td style="padding:6px 8px;color:#6b7280;vertical-align:top">Business Impact</td>
+                            <td style="padding:6px 8px;color:#f59e0b">{business_impact}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:6px 8px;color:#6b7280;vertical-align:top">Auto Bug</td>
+                            <td style="padding:6px 8px;color:#e2e8f0">
+                                {"✅ Jira bug created: " + bug_key if bug_key else "❌ No bug created"}
+                            </td>
+                        </tr>
+                    </table>
+                </div>"""
+
+        changed_badge = (
+            '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;'
+            'border-radius:6px;padding:2px 8px;font-size:10px;margin-left:8px">STORY CHANGED</span>'
+        ) if story_changed else ""
+
         # Detail card
         tc_html = test_cases.replace("\n", "<br>") if test_cases else "—"
         cards_html += f"""
@@ -84,6 +177,7 @@ def generate_html_report(test_results, output_path="test_report.html"):
                 <div class="card-title">
                     <span class="issue-key">{key}</span>
                     <span class="card-summary">{summary}</span>
+                    {changed_badge}
                 </div>
                 <span class="status-badge {sc}">{status}</span>
             </div>
@@ -93,6 +187,7 @@ def generate_html_report(test_results, output_path="test_report.html"):
                     <div class="test-cases">{tc_html}</div>
                     <h4>Workflow Executed</h4>
                     <div class="workflow-detail">{workflow}</div>
+                    {failure_html}
                 </div>
                 <div class="card-right">
                     <h4>Evidence Screenshot</h4>
@@ -212,10 +307,11 @@ def generate_html_report(test_results, output_path="test_report.html"):
     height: 3px;
     border-radius: 12px 12px 0 0;
   }}
-  .kpi.total::after {{ background: var(--accent); }}
-  .kpi.passed::after {{ background: var(--pass); }}
-  .kpi.failed::after {{ background: var(--fail); }}
-  .kpi.rate::after {{ background: var(--partial); }}
+.kpi.total::after {{ background: var(--accent); }}
+.kpi.passed::after {{ background: var(--pass); }}
+.kpi.failed::after {{ background: var(--fail); }}
+.kpi.skipped::after {{ background: var(--partial); }}
+.kpi.rate::after {{ background: var(--partial); }}
   .kpi-label {{
     font-size: 11px;
     font-weight: 500;
@@ -231,9 +327,10 @@ def generate_html_report(test_results, output_path="test_report.html"):
     line-height: 1;
     color: #fff;
   }}
-  .kpi.passed .kpi-value {{ color: var(--pass); }}
-  .kpi.failed .kpi-value {{ color: var(--fail); }}
-  .kpi.rate .kpi-value {{ color: var(--partial); }}
+.kpi.passed .kpi-value {{ color: var(--pass); }}
+.kpi.failed .kpi-value {{ color: var(--fail); }}
+.kpi.skipped .kpi-value {{ color: var(--partial); }}
+.kpi.rate .kpi-value {{ color: var(--partial); }}
 
   /* ── Charts row ── */
   .charts-row {{
@@ -459,6 +556,10 @@ def generate_html_report(test_results, output_path="test_report.html"):
       <div class="kpi-label">Failed</div>
       <div class="kpi-value">{failed}</div>
     </div>
+    <div class="kpi skipped">
+      <div class="kpi-label">Skipped</div>
+      <div class="kpi-value">{skipped}</div>
+    </div>
     <div class="kpi rate">
       <div class="kpi-label">Pass Rate</div>
       <div class="kpi-value">{pass_pct}%</div>
@@ -480,6 +581,10 @@ def generate_html_report(test_results, output_path="test_report.html"):
             <div class="legend-dot" style="background:#ef4444"></div>
             <span>Failed ({failed})</span>
           </div>
+          <div class="legend-item">
+          <div class="legend-dot" style="background:#f59e0b"></div>
+          <span>Skipped ({skipped})</span>
+        </div>
         </div>
       </div>
     </div>
@@ -520,16 +625,16 @@ def generate_html_report(test_results, output_path="test_report.html"):
 <script>
   const passColor = '#22c55e';
   const failColor = '#ef4444';
+  const skipColor = '#f59e0b';
   const gridColor = 'rgba(255,255,255,0.06)';
-
   // Donut
   new Chart(document.getElementById('donutChart'), {{
     type: 'doughnut',
     data: {{
-      labels: ['Passed', 'Failed'],
+      labels: ['Passed', 'Failed', 'Skipped'],
       datasets: [{{
-        data: [{passed}, {failed}],
-        backgroundColor: [passColor, failColor],
+        data: [{passed}, {failed}, {skipped}],
+        backgroundColor: [passColor, failColor, skipColor],
         borderWidth: 0,
         hoverOffset: 4
       }}]
@@ -543,8 +648,17 @@ def generate_html_report(test_results, output_path="test_report.html"):
 
   // Bar
   const labels = {[repr(r.get("issue_key","")) for r in test_results]};
-  const colors = {[repr("rgba(34,197,94,0.85)" if str(r.get("status","")).startswith("PASS") else "rgba(239,68,68,0.85)") for r in test_results]};
-
+  //const colors = {[repr("rgba(34,197,94,0.85)" if str(r.get("status","")).startswith("PASS") else "rgba(239,68,68,0.85)") for r in test_results]};
+  const colors = {[
+      repr(
+          "rgba(34,197,94,0.85)"
+          if str(r.get("status", "")).startswith("PASS")
+          else "rgba(239,68,68,0.85)"
+          if str(r.get("status", "")).startswith("FAIL")
+          else "rgba(245,158,11,0.85)"
+      )
+      for r in test_results
+  ]};
   new Chart(document.getElementById('barChart'), {{
     type: 'bar',
     data: {{
