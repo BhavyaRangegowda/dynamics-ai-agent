@@ -124,14 +124,14 @@ jobs:
       #   main branch (cloud)         = true  (no screen on Microsoft hosted agent)
       #   self-hosted branch (laptop) = false (browser visible on your screen)
       #   local run                   = false (controlled by your .env file)
-      HEADLESS: ${{ if eq(variables['Build.SourceBranchName'], 'main') }}true${{ else }}false${{ end }}
+    
+      ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+        HEADLESS: 'true'
+        MFA_WAIT_SECONDS: '0'
 
-      # MFA_WAIT_SECONDS:
-      #   main branch (cloud)         = 0  (service account, no MFA)
-      #   self-hosted branch (laptop) = 30 (you approve on your phone)
-      #   local run                   = 30 (controlled by your .env file)
-      MFA_WAIT_SECONDS: ${{ if eq(variables['Build.SourceBranchName'], 'main') }}0${{ else }}30${{ end }}
-
+      ${{ if eq(variables['Build.SourceBranchName'], 'self-hosted') }}:
+        HEADLESS: 'false'
+        MFA_WAIT_SECONDS: '30'
       # Jira
       JIRA_URL: $(JIRA_URL)
       JIRA_EMAIL: $(JIRA_EMAIL)
