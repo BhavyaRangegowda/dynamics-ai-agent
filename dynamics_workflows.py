@@ -605,12 +605,22 @@ Example: ["//button[@aria-label='Save']", "//button[contains(@title,'Save')]"]
 
 
 def _dynamic_find_field(driver, target, label, timeout=5):
-    """Find an editable field using the generated XPath plus generic label fallbacks."""
+    """
+    Find an editable field for an AI-generated TYPE action.
+
+    Recovery is generic and semantic — not tied to a Jira issue, workflow,
+    or Dynamics entity.
+    """
     candidates = []
+
+    # 1. Always try the AI-generated locator first.
     if target:
         candidates.append(target)
 
+    label_lower = (label or "").lower()
     safe_label = (label or "").replace("'", "")
+
+    # 2. Existing label-based recovery.
     if safe_label:
         candidates.extend([
             f"//input[@aria-label='{safe_label}']",
@@ -619,18 +629,59 @@ def _dynamic_find_field(driver, target, label, timeout=5):
             f"//textarea[contains(@aria-label,'{safe_label}')]",
         ])
 
+    # 3. Generic recovery for search/filter TYPE actions.
+    #    This is intentionally based on the semantic action, not KAN-13.
+    if any(word in label_lower for word in ("search", "find", "filter")):
+        candidates.extend([
+            "//input[@role='searchbox']",
+            "//input[contains(@aria-label,'Search')]",
+            "//input[contains(@aria-label,'search')]",
+            "//input[contains(@placeholder,'Search')]",
+            "//input[contains(@placeholder,'search')]",
+            "//input[contains(@title,'Search')]",
+            "//input[contains(@title,'search')]",
+            "//input[contains(@data-id,'search')]",
+            "//input[contains(@data-id,'Search')]",
+        ])
+
+    # Remove duplicates while preserving priority.
+    candidates = list(dict.fromkeys(candidates))
+
     last_error = None
-    for xpath in candidates:
+
+    for idx, xpath in enumerate(candidates, 1):
         try:
-            field = WebDriverWait(driver, timeout).until(
-                EC.visibility_of_element_located((By.XPATH, xpath))
+            logger.info(
+                "DYNAMIC TYPE SELF-HEALING: trying field locator-%d: %s",
+                idx,
+                xpath,
             )
+
+            field = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable((By.XPATH, xpath))
+            )
+
+            logger.info(
+                "DYNAMIC TYPE SELF-HEALED: field locator-%d succeeded: %s",
+                idx,
+                xpath,
+            )
+
             return field, xpath
+
         except Exception as e:
             last_error = e
+            logger.debug(
+                "Dynamic TYPE locator-%d failed [%s]: %s",
+                idx,
+                xpath,
+                e,
+            )
+
     if last_error:
         raise last_error
-    raise ValueError(f"No field locator available for '{label}'")
+
+    raise ValueError(f"No editable field locator available for '{label}'")
 
 
 def _execute_dynamic_workflow(driver, issue_key, workflow, summary, groq_client):
