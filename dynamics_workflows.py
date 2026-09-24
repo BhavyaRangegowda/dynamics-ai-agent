@@ -808,7 +808,43 @@ Requirements:
                         driver, issue_key, label, target, groq_client
                     )
                     if not healed:
-                        raise primary_error
+                        # Generic search recovery: many D365 list-view search boxes
+                        # execute on ENTER and do not expose a separate Search button.
+                        label_lower = (label or "").lower()
+                        target_lower = (target or "").lower()
+                        is_search_action = any(
+                            word in label_lower or word in target_lower
+                            for word in ("search", "find", "filter")
+                        )
+
+                        if is_search_action:
+                            try:
+                                search_field, search_xpath = _dynamic_find_field(
+                                    driver,
+                                    "//input[@role='searchbox']",
+                                    "Search",
+                                    timeout=3,
+                                )
+                                search_field.click()
+                                search_field.send_keys(Keys.ENTER)
+                                logger.info(
+                                    "[%s] DYNAMIC SEARCH RECOVERY: no clickable Search control; "
+                                    "pressed ENTER in search field [%s]",
+                                    issue_key,
+                                    search_xpath,
+                                )
+                                healed = True
+                                healed_xpath = f"ENTER via {search_xpath}"
+                            except Exception as enter_error:
+                                logger.debug(
+                                    "[%s] Dynamic ENTER search recovery failed: %s",
+                                    issue_key,
+                                    enter_error,
+                                )
+
+                        if not healed:
+                            raise primary_error
+
                     logger.info(
                         "[%s] Dynamic click recovered for '%s' with: %s",
                         issue_key,
