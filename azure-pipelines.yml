@@ -19,13 +19,7 @@
 #     MFA: 0 seconds (requires service account with no MFA)
 # =============================================================================
 
-trigger:
-  branches:
-    include:
-      - main
-      - self-hosted
-
-pr: none
+trigger: none
 
 jobs:
 - job: RunAutomation
@@ -154,8 +148,6 @@ jobs:
       EMAIL_RECIPIENTS: $(EMAIL_RECIPIENTS)
       EMAIL_SMTP_HOST: $(EMAIL_SMTP_HOST)
       EMAIL_SMTP_PORT: $(EMAIL_SMTP_PORT)
-
-      # Slack
       SLACK_WEBHOOK_URL: $(SLACK_WEBHOOK_URL)
 
       # Zephyr Scale (disabled by default)
