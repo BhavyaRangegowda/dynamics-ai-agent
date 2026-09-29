@@ -70,7 +70,8 @@ def post_result_to_jira(jira_client, issue_key, test_cases, ai_plan, test_status
 
 
 def _link_bug_to_story(jira_client, bug_key, parent_issue_key):
-    """Link a generated bug to its source story using an available Jira link type."""
+    """Link a generated bug to its source story using a valid Jira link type."""
+
     try:
         link_types = jira_client.issue_link_types()
     except Exception as e:
@@ -80,50 +81,76 @@ def _link_bug_to_story(jira_client, bug_key, parent_issue_key):
         )
         return False
 
-    # Prefer the standard Jira relationship if available, then fall back to
-    # another existing non-hierarchical link type. Never invent a link type.
-    preferred_names = ("Relates", "Relates to")
-    available = {str(link_type.name).strip().lower(): str(link_type.name).strip()
-                 for link_type in link_types}
+    # Prefer Jira's standard relationship link.
+    selected = None
 
-    selected_type = None
-    for preferred in preferred_names:
-        selected_type = available.get(preferred.lower())
-        if selected_type:
+    for link_type in link_types:
+        name = str(getattr(link_type, "name", "") or "").strip()
+
+        if name.lower() in ("relates", "relates to"):
+            selected = link_type
             break
 
-    if not selected_type:
-        for link_type in link_types:
-            name = str(getattr(link_type, "name", "") or "").strip()
-            if name:
-                selected_type = name
-                break
+    # Fall back to the first available link type.
+    if selected is None and link_types:
+        selected = link_types[0]
 
-    if not selected_type:
+    if selected is None:
         logger.warning(
-            "Bug %s created, but this Jira instance exposes no usable issue-link type.",
+            "Bug %s created, but this Jira instance exposes no issue-link types.",
             bug_key
         )
         return False
 
-    try:
-        jira_client.create_issue_link(
-            type=selected_type,
-            inwardIssue=bug_key,
-            outwardIssue=parent_issue_key,
-        )
-        logger.info(
-            "Linked bug %s to story %s using Jira link type '%s'",
-            bug_key, parent_issue_key, selected_type
-        )
-        return True
-    except Exception as e:
-        logger.warning(
-            "Bug %s created, but linking it to story %s with type '%s' failed: %s",
-            bug_key, parent_issue_key, selected_type, e
-        )
-        return False
+    link_name = str(getattr(selected, "name", "") or "").strip()
+    link_id = str(getattr(selected, "id", "") or "").strip()
 
+    logger.info(
+        "Jira link type selected: name='%s', id='%s'",
+        link_name,
+        link_id
+    )
+
+    # python-jira normally accepts the link type name. If Jira rejects it,
+    # retry with the actual link-type ID returned by Jira.
+    candidates = []
+
+    if link_name:
+        candidates.append(link_name)
+
+    if link_id and link_id not in candidates:
+        candidates.append(link_id)
+
+    for candidate in candidates:
+        try:
+            jira_client.create_issue_link(
+                type=candidate,
+                inwardIssue=bug_key,
+                outwardIssue=parent_issue_key,
+            )
+
+            logger.info(
+                "Linked bug %s to story %s using Jira link type '%s'",
+                bug_key,
+                parent_issue_key,
+                candidate
+            )
+            return True
+
+        except Exception as e:
+            logger.warning(
+                "Jira link attempt failed for type '%s': %s",
+                candidate,
+                e
+            )
+
+    logger.warning(
+        "Bug %s was created successfully, but could not be linked to story %s.",
+        bug_key,
+        parent_issue_key
+    )
+
+    return False
 
 def create_jira_bug(jira_client, parent_issue_key, summary, failure_analysis,
                     test_status, screenshot_path):

@@ -627,6 +627,20 @@ def _dynamic_find_field(driver, target, label, timeout=5):
             f"//textarea[@aria-label='{safe_label}']",
             f"//input[contains(@aria-label,'{safe_label}')]",
             f"//textarea[contains(@aria-label,'{safe_label}')]",
+            # Case-insensitive aria-label matching for D365 fields.
+            # Example: AI may generate "Account name" while D365 renders "Account Name".
+            f"//input[translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')='{safe_label.lower()}']",
+            f"//textarea[translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')='{safe_label.lower()}']",
+        ])
+
+    # 2b. Generic Account Name recovery using stable D365 attributes.
+    # This is field-semantic recovery, not Jira-story-specific logic.
+    if "account name" in label_lower:
+        candidates.extend([
+            "//input[@aria-label='Account Name']",
+            "//input[contains(@data-id,'name.fieldControl')]",
+            "//input[contains(@data-id,'name')]",
+            "//input[@name='name']",
         ])
 
     # 3. Generic recovery for search/filter TYPE actions.
@@ -748,6 +762,7 @@ Requirements:
 - Prefer stable aria-label, title, role, name, data-id, href, and visible-text XPath selectors.
 - In Dynamics 365 entity list grids, do NOT assume each row has an Edit button. To edit an existing record, normally open it by clicking the primary-name hyperlink in the grid, then edit the form.
 - For update stories, open an existing record, edit the requested field, save it, and verify the new value.
+- For update stories, NEVER invent an existing record name such as "ExistingAccount" or "TestAccount" for a search step. Prefer opening the first existing grid record directly. If a search step is generated anyway, runtime automation will replace the invented search value with a record name discovered from the live D365 grid.
 - When verifying a form field after save, use verify_value rather than verify_text. verify_text is only for rendered page text.
 - For verify_value, always provide a non-empty XPath target for the field and the exact expected value.
 - Use {{{{unique}}}} inside generated test values when a unique value is useful.
@@ -757,27 +772,85 @@ Requirements:
 - Do not use actions outside the allowed list.
 """
 
-    try:
-        response = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=1200,
-        )
-        raw = response.choices[0].message.content.strip()
-        match = re.search(r'\[.*\]', raw, re.DOTALL)
+    def _parse_dynamic_steps(raw_text):
+        """Extract and validate the JSON step array returned by the AI planner."""
+        raw_text = (raw_text or "").strip()
+        match = re.search(r'\[.*\]', raw_text, re.DOTALL)
         if not match:
             raise ValueError("No JSON array in response")
-        steps = json.loads(match.group())[:10]
-    except Exception as e:
-        logger.error("[%s] AI step generation failed: %s", issue_key, e)
+
+        parsed = json.loads(match.group())
+        if not isinstance(parsed, list) or not parsed:
+            raise ValueError("AI response JSON must be a non-empty array")
+
+        steps = parsed[:10]
+        for index, step in enumerate(steps, 1):
+            if not isinstance(step, dict):
+                raise ValueError(f"Step {index} is not a JSON object")
+            if not str(step.get("action", "")).strip():
+                raise ValueError(f"Step {index} has no action")
+
+        return steps
+
+    generation_error = None
+    steps = None
+
+    for attempt in range(1, 3):
+        try:
+            if attempt == 1:
+                messages = [{"role": "user", "content": prompt}]
+            else:
+                logger.warning(
+                    "[%s] AI step generation response was malformed — retrying once with strict JSON-only instruction",
+                    issue_key,
+                )
+                retry_prompt = prompt + """
+
+IMPORTANT RETRY INSTRUCTION:
+Your previous response could not be parsed. Return ONLY the raw JSON array.
+Do not include markdown fences, explanations, headings, notes, or any text before or after the array.
+The first character of your response must be [ and the final character must be ].
+"""
+                messages = [{"role": "user", "content": retry_prompt}]
+
+            response = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=messages,
+                temperature=0.0 if attempt == 2 else 0.1,
+                max_tokens=1200,
+            )
+            raw = response.choices[0].message.content or ""
+            steps = _parse_dynamic_steps(raw)
+
+            if attempt == 2:
+                logger.info("[%s] AI step generation retry succeeded", issue_key)
+            break
+
+        except Exception as e:
+            generation_error = e
+            logger.warning(
+                "[%s] AI step generation attempt %d/2 failed: %s: %s",
+                issue_key,
+                attempt,
+                type(e).__name__,
+                e,
+            )
+
+    if steps is None:
+        logger.error("[%s] AI step generation failed after 2 attempts: %s", issue_key, generation_error)
         error_path = capture_screenshot(driver, f"{issue_key}_dynamic_failed.png")
-        return f"FAIL - AI could not generate steps: {e}", error_path
+        return f"FAIL - AI could not generate steps after retry: {generation_error}", error_path
 
     run_unique = datetime.now().strftime("%Y%m%d%H%M%S")
     for step in steps:
         if isinstance(step.get("value"), str):
             step["value"] = step["value"].replace("{{unique}}", run_unique)
+
+    # Dynamic update stories must operate on data that actually exists in D365.
+    # If the AI planner invents a record name for a Search/Find/Filter TYPE step,
+    # replace it at execution time with the first real record visible in the grid.
+    # This remains generic: no Jira key and no hard-coded account name is used.
+    is_update_story = "update" in (workflow or "").lower() or "update" in (summary or "").lower()
 
     logger.info("[%s] AI generated %d steps — executing...", issue_key, len(steps))
 
@@ -854,6 +927,33 @@ Requirements:
                 wait_for_dynamics_ready(driver)
 
             elif action == "type":
+                label_lower = (label or "").lower()
+                target_lower = (target or "").lower()
+                is_search_type = any(
+                    word in label_lower or word in target_lower
+                    for word in ("search", "find", "filter")
+                )
+
+                if is_update_story and is_search_type:
+                    discovered_record = get_first_grid_record_text(driver)
+                    if discovered_record:
+                        if value != discovered_record:
+                            logger.info(
+                                "[%s] DYNAMIC TEST-DATA RECOVERY: replacing AI search value '%s' "
+                                "with live D365 record '%s'",
+                                issue_key,
+                                value,
+                                discovered_record,
+                            )
+                        value = discovered_record
+                    else:
+                        logger.warning(
+                            "[%s] DYNAMIC TEST-DATA RECOVERY: no existing grid record "
+                            "was discoverable; keeping AI search value '%s'",
+                            issue_key,
+                            value,
+                        )
+
                 field, used_xpath = _dynamic_find_field(driver, target, label, timeout=6)
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", field)
                 field.click()

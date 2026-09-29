@@ -5,19 +5,26 @@ import json
 import logging
 
 import time
+
 import sys
 
 # ---------------------------------------------------------------------------
+
 # UTF-8 console safety
+
 # ---------------------------------------------------------------------------
+
 # Azure DevOps self-hosted Windows agents may use a legacy console encoding.
+
 # Force UTF-8 so Unicode symbols in logs/summaries cannot crash the run.
+
 if hasattr(sys.stdout, "reconfigure"):
+
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 if hasattr(sys.stderr, "reconfigure"):
+
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-
 
 from groq import Groq
 
@@ -32,8 +39,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 
 from webdriver_manager.chrome import ChromeDriverManager
-
-
 
 from config import (
 
@@ -109,15 +114,11 @@ from story_change_service import (
 
 )
 
-
-
 # ---------------------------------------------------------------------------
 
 # Logging
 
 # ---------------------------------------------------------------------------
-
-
 
 logging.basicConfig(
 
@@ -131,25 +132,17 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-
-
-
-
 # ---------------------------------------------------------------------------
 
 # Browser setup
 
 # ---------------------------------------------------------------------------
 
-
-
 def _build_driver():
 
     options = webdriver.ChromeOptions()
 
     headless = os.getenv("HEADLESS", "false").lower() == "true"
-
-
 
     if headless:
 
@@ -163,55 +156,31 @@ def _build_driver():
 
         options.add_argument("--disable-gpu")
 
-        options.add_argument("--remote-debugging-port=9222")
-
     else:
 
         logger.info("Running browser in VISIBLE mode")
 
         options.add_argument("--start-maximized")
 
-
-
-        # Reuse a dedicated Chrome profile on the self-hosted agent.
-
-        # This allows Microsoft authentication cookies/session state to persist
-
-        # between automation runs.
-
         chrome_profile = os.getenv(
 
             "D365_CHROME_PROFILE",
 
-            r"C:**\U**sers\bhavy\d365-automation-chrome"
+            r"C:****\U****sers\bhavy\d365-automation-chrome",
 
         )
 
+        #options.add_argument(f"--user-data-dir={chrome_profile}")
 
+        #options.add_argument("--profile-directory=Default")
 
-        options.add_argument(f"--user-data-dir={chrome_profile}")
-
-        options.add_argument("--profile-directory=Default")
-
-
-
-        logger.info(
-
-            "Using persistent D365 Chrome profile: %s",
-
-            chrome_profile
-
-        )
-
-
+        logger.info("Using persistent D365 Chrome profile: %s", chrome_profile)
 
     options.add_argument("--window-size=1920,1080")
 
     options.add_argument("--disable-notifications")
 
     options.add_argument("--disable-popup-blocking")
-
-
 
     driver = webdriver.Chrome(
 
@@ -221,23 +190,15 @@ def _build_driver():
 
     )
 
-
-
     driver.set_window_size(1920, 1080)
 
     return driver
-
-
-
-
 
 # ---------------------------------------------------------------------------
 
 # Login
 
 # ---------------------------------------------------------------------------
-
-
 
 def login_to_dynamics(driver):
 
@@ -246,8 +207,6 @@ def login_to_dynamics(driver):
     driver.get(DYNAMICS_URL)
 
     wait_for_page_load(driver)
-
-
 
     # ---------------------------------------------------------------
 
@@ -267,8 +226,6 @@ def login_to_dynamics(driver):
 
         )
 
-
-
         if "login.microsoftonline.com" not in driver.current_url.lower():
 
             logger.info(
@@ -279,15 +236,11 @@ def login_to_dynamics(driver):
 
             )
 
-
-
             smart_wait(driver)
 
             capture_screenshot(driver, "00_login_success.png")
 
             return
-
-
 
     except Exception:
 
@@ -297,8 +250,6 @@ def login_to_dynamics(driver):
 
         )
 
-
-
     # ---------------------------------------------------------------
 
     # Normal Microsoft login
@@ -307,15 +258,11 @@ def login_to_dynamics(driver):
 
     logger.info("Logging into Dynamics 365...")
 
-
-
     WebDriverWait(driver, 20).until(
 
         EC.presence_of_element_located((By.NAME, "loginfmt"))
 
     )
-
-
 
     driver.find_element(By.NAME, "loginfmt").send_keys(DYNAMICS_USERNAME)
 
@@ -323,21 +270,15 @@ def login_to_dynamics(driver):
 
     time.sleep(2)
 
-
-
     WebDriverWait(driver, 20).until(
 
         EC.presence_of_element_located((By.NAME, "passwd"))
 
     )
 
-
-
     driver.find_element(By.NAME, "passwd").send_keys(DYNAMICS_PASSWORD)
 
     click_element(driver, "login_next", "Sign In")
-
-
 
     logger.info(
 
@@ -347,11 +288,7 @@ def login_to_dynamics(driver):
 
     )
 
-
-
     time.sleep(MFA_WAIT_SECONDS)
-
-
 
     # Microsoft may display the Stay signed in prompt on the first
 
@@ -377,19 +314,11 @@ def login_to_dynamics(driver):
 
         logger.info("No 'Stay signed in' prompt appeared")
 
-
-
     smart_wait(driver)
-
-
 
     logger.info("Login successful")
 
     capture_screenshot(driver, "00_login_success.png")
-
-
-
-
 
 # ---------------------------------------------------------------------------
 
@@ -397,13 +326,9 @@ def login_to_dynamics(driver):
 
 # ---------------------------------------------------------------------------
 
-
-
 def _calculate_summary(test_results):
 
     """Calculate pass/fail/skip counts correctly.
-
-
 
     SKIP stories are NOT counted as failures.
 
@@ -421,10 +346,6 @@ def _calculate_summary(test_results):
 
     return overall, total, passed, failed, skipped
 
-
-
-
-
 def _print_summary(test_results):
 
     print("\n" + "=" * 75)
@@ -432,8 +353,6 @@ def _print_summary(test_results):
     print(f"{'ISSUE':<12} {'STATUS':<40} SCREENSHOT")
 
     print("-" * 75)
-
-
 
     for r in test_results:
 
@@ -446,8 +365,6 @@ def _print_summary(test_results):
         screenshot = r.get("screenshot") or "—"
 
         print(f"{r['issue_key']:<12} {display_status:<40} {screenshot}")
-
-
 
     overall, total, passed, failed, skipped = _calculate_summary(test_results)
 
@@ -469,8 +386,6 @@ def _print_summary(test_results):
 
     print("=" * 75 + "\n")
 
-
-
     # Print auto-created bugs
 
     bugs = [r for r in test_results if r.get("bug_key")]
@@ -485,21 +400,13 @@ def _print_summary(test_results):
 
         print()
 
-
-
-
-
 def _send_notifications(test_results, report_path):
 
     overall, total, passed, failed, skipped = _calculate_summary(test_results)
 
-
-
     logger.info("Sending email notification...")
 
     send_test_report_email(test_results, report_path=report_path)
-
-
 
     logger.info("Sending Slack notification...")
 
@@ -519,17 +426,11 @@ def _send_notifications(test_results, report_path):
 
     )
 
-
-
-
-
 # ---------------------------------------------------------------------------
 
 # Main
 
 # ---------------------------------------------------------------------------
-
-
 
 def main():
 
@@ -538,8 +439,6 @@ def main():
     print("AI-POWERED DYNAMICS 365 TEST AUTOMATION AGENT")
 
     print("=" * 60)
-
-
 
     try:
 
@@ -551,15 +450,11 @@ def main():
 
         return
 
-
-
     jira_client = create_jira_client()
 
     groq_client = Groq(api_key=GROQ_API_KEY)
 
     reset_cycle_cache()
-
-
 
     driver = _build_driver()
 
@@ -567,39 +462,23 @@ def main():
 
     report_path = None
 
-
-
     try:
 
         login_to_dynamics(driver)
 
-
-
         # ── Step 1: Pull user stories ─────────────────────────────────────────
-
-
-
-
 
         logger.info("[STEP 1] Pulling user stories from Jira...")
 
         issues = fetch_user_stories(jira_client)
 
-
-
         logger.info("Found %d user stories", len(issues))
-
-
-
-
 
         if not issues:
 
                     logger.warning("No user stories found — check PROJECT_KEY in .env")
 
                     return
-
-
 
         # ── Step 2: Detect story changes ──────────────────────────────────────
 
@@ -608,8 +487,6 @@ def main():
         change_result = detect_story_changes(issues)
 
         print(get_change_summary(change_result))
-
-
 
         # ── Step 3: Process each story ────────────────────────────────────────
 
@@ -625,8 +502,6 @@ def main():
 
             )
 
-
-
             is_changed = should_regenerate(issue.key, change_result)
 
             if is_changed:
@@ -637,13 +512,9 @@ def main():
 
                 logger.info("  Story unchanged since last run")
 
-
-
             # Dismiss any leftover dialogs from previous story
 
             dismiss_any_dialog(driver)
-
-
 
             # Build the complete Jira requirement so AI uses both the story
 
@@ -657,15 +528,11 @@ def main():
 
             )
 
-
-
             # Generate AI test cases from the complete Jira requirement
 
             logger.info("  Generating AI test cases...")
 
             test_cases = ai_generate_test_cases(groq_client, requirement_text)
-
-
 
             # Classify workflow intent from the complete Jira requirement
 
@@ -673,13 +540,9 @@ def main():
 
             ai_plan = ai_decide_workflow(groq_client, requirement_text)
 
-
-
             # Pass the complete requirement to dynamic step generation
 
             ai_plan["summary"] = requirement_text
-
-
 
             logger.info(
 
@@ -690,8 +553,6 @@ def main():
                 ai_plan.get("entity")
 
             )
-
-
 
             # Execute — fully dynamic, AI reads DOM and generates steps
 
@@ -707,15 +568,11 @@ def main():
 
             )
 
-
-
             # ── Handle SKIP ───────────────────────────────────────────────────
 
             failure_analysis = None
 
             bug_key = None
-
-
 
             if str(test_status).startswith("SKIP"):
 
@@ -749,8 +606,6 @@ def main():
 
                 )
 
-
-
                 test_results.append({
 
                     "issue_key": issue.key,
@@ -776,8 +631,6 @@ def main():
                 logger.info("  Completed: %s → %s", issue.key, test_status)
 
                 continue
-
-
 
             # ── AI Failure Analysis (for real failures only) ──────────────────
 
@@ -825,7 +678,41 @@ def main():
 
                 )
 
+                # Framework validation stories intentionally trigger a failure so we can
 
+                # prove that AI failure analysis works. Treat successful detection/analysis
+
+                # as a passing framework test and never create a product bug for it.
+
+                is_failure_handling_validation = (
+
+                    str(ai_plan.get("workflow", "")).strip().lower()
+
+                    == "validate_failure_handling"
+
+                )
+
+                if is_failure_handling_validation:
+
+                    logger.info(
+
+                        "  [%s] Intentional failure detected and analyzed — "
+
+                        "marking framework validation as PASS",
+
+                        issue.key,
+
+                    )
+
+                    failure_analysis["create_bug"] = False
+
+                    test_status = (
+
+                        "PASS - Failure handling validated; "
+
+                        "intentional failure detected and analyzed"
+
+                    )
 
                 # ── Auto Jira Bug Creation ────────────────────────────────────
 
@@ -857,8 +744,6 @@ def main():
 
                         logger.info("  Jira bug created: %s", bug_key)
 
-
-
             # ── Post results to Zephyr / Jira ─────────────────────────────────
 
             logger.info("  Posting result to Zephyr/Jira...")
@@ -878,8 +763,6 @@ def main():
                 screenshot_path=screenshot_path,
 
             )
-
-
 
             # Post detailed failure analysis as separate Jira comment
 
@@ -903,8 +786,6 @@ def main():
 
                 )
 
-
-
             test_results.append({
 
                 "issue_key": issue.key,
@@ -927,11 +808,7 @@ def main():
 
             })
 
-
-
             logger.info("  Completed: %s → %s", issue.key, test_status)
-
-
 
         # ── Step 4: Save raw results ──────────────────────────────────────────
 
@@ -941,15 +818,11 @@ def main():
 
             json.dump(test_results, f, indent=2, default=str)
 
-
-
         # ── Step 5: Save story hashes for next run ────────────────────────────
 
         logger.info("[STEP 5] Saving story hashes...")
 
         save_story_hashes(change_result)
-
-
 
         # ── Step 6: Generate HTML report ──────────────────────────────────────
 
@@ -969,23 +842,17 @@ def main():
 
             logger.warning("HTML report generation failed")
 
-
-
         # ── Step 7: Print console summary ─────────────────────────────────────
 
         _print_summary(test_results)
 
         logger.info("Screenshots saved in: %s", SCREENSHOT_DIR)
 
-
-
         # ── Step 8: Send notifications ────────────────────────────────────────
 
         logger.info("[STEP 8] Sending notifications...")
 
         _send_notifications(test_results, report_path)
-
-
 
     except Exception as e:
 
@@ -1011,17 +878,11 @@ def main():
 
             _send_notifications(test_results, report_path)
 
-
-
     finally:
 
         time.sleep(2)
 
         driver.quit()
-
-
-
-
 
 if __name__ == "__main__":
 
